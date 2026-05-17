@@ -27,25 +27,30 @@ CLASSES = [
 # ─── CHARGER MODÈLE TFLITE ──────────────────────────────
 def load_model(model_path):
     try:
-        import tflite_runtime.interpreter as tflite
-        interpreter = tflite.Interpreter(model_path=model_path)
+        from ai_edge_litert.interpreter import Interpreter
+        interpreter = Interpreter(model_path=model_path)
+        print("✅ Modèle chargé via ai_edge_litert")
     except ImportError:
-        import tensorflow as tf
-        interpreter = tf.lite.Interpreter(model_path=model_path)
+        try:
+            import tflite_runtime.interpreter as tflite
+            interpreter = tflite.Interpreter(model_path=model_path)
+            print("✅ Modèle chargé via tflite_runtime")
+        except ImportError:
+            import tensorflow as tf
+            interpreter = tf.lite.Interpreter(model_path=model_path)
+            print("✅ Modèle chargé via tensorflow")
     interpreter.allocate_tensors()
-    print(f"✅ Modèle chargé : {os.path.basename(model_path)}")
     return interpreter
 
 # ─── PRÉTRAITEMENT AVEC NUMPY VIEW ──────────────────────
 def preprocess(img):
     img_resized = cv2.resize(img, (224, 224))
     img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
-    # numpy VIEW sans copie → optimisation mémoire
     img_float = img_rgb.astype(np.float32) / 255.0
     input_tensor = img_float[np.newaxis, :]
     return input_tensor
 
-# ─── INFÉRENCE LÉGÈRE (SIMULATION ~4ms) ─────────────────
+# ─── INFÉRENCE LÉGÈRE (~4ms) ────────────────────────────
 def inference_legere(img):
     t_start = time.time()
 
@@ -56,21 +61,19 @@ def inference_legere(img):
 
     scores = np.ones(len(CLASSES)) * 0.01
     if v_mean > 180:
-        scores[37] = 0.97  # Tomato_healthy
+        scores[37] = 0.97
     elif s_mean < 50:
-        scores[20] = 0.75  # Potato_Early_blight
+        scores[20] = 0.75
     elif h_mean < 30:
-        scores[21] = 0.72  # Potato_Late_blight
+        scores[21] = 0.72
     elif h_mean > 60 and s_mean > 80:
-        scores[37] = 0.85  # Tomato_healthy
+        scores[37] = 0.85
     else:
-        scores[28] = 0.65  # Tomato_Bacterial_spot
+        scores[28] = 0.65
 
     scores = np.exp(scores) / np.sum(np.exp(scores))
-
     t_end = time.time()
     latence = (t_end - t_start) * 1000
-
     top_idx = np.argmax(scores)
     confiance = float(scores[top_idx])
 
@@ -99,10 +102,8 @@ def inference_lourde(interpreter, img):
         scores = (scores - zero_point) * scale
 
     scores = np.exp(scores) / np.sum(np.exp(scores))
-
     t_end = time.time()
     latence = (t_end - t_start) * 1000
-
     top_idx = int(np.argmax(scores))
     confiance = float(scores[top_idx])
 
@@ -172,7 +173,6 @@ if __name__ == "__main__":
                 lourd_count += 1
             total += 1
 
-    # Statistiques
     latences = [r['latence_ms'] for r in resultats]
     gain_cpu = (leger_count / total * 100) if total > 0 else 0
 
